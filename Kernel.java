@@ -1,4 +1,7 @@
 import java.util.*;
+
+import javax.lang.model.util.ElementScanner6;
+
 import java.lang.reflect.*;
 import java.io.*;
 
@@ -57,6 +60,9 @@ public class Kernel
     private final static int COND_DISK_REQ = 1; // wait condition 
     private final static int COND_DISK_FIN = 2; // wait condition
 
+	// File System
+	private static FileSystem fs;
+
     // Standard input
     private static BufferedReader input
 	= new BufferedReader( new InputStreamReader( System.in ) );
@@ -82,6 +88,9 @@ public class Kernel
 		// instantiate synchronized queues
 		ioQueue = new SyncQueue( );
 		waitQueue = new SyncQueue( scheduler.getMaxThreads( ) );
+
+		// instantiate FileSystem
+		fs = new FileSystem(1000);
 		return OK;
 	    case EXEC:
 		return sysExec( ( String[] )args );
@@ -127,45 +136,58 @@ public class Kernel
 		    ioQueue.enqueueAndSleep( COND_DISK_FIN );
 		return OK;
 	    case READ:
-		switch ( param ) {
-		case STDIN:
-		    try {
-			String s = input.readLine(); // read a keyboard input
-			if ( s == null ) {
-			    return ERROR;
+			switch ( param ) {
+				case STDIN:
+					try {
+					String s = input.readLine(); // read a keyboard input
+					if ( s == null ) {
+						return ERROR;
+					}
+					// prepare a read buffer
+					StringBuffer buf = ( StringBuffer )args;
+
+					// append the keyboard intput to this read buffer
+					buf.append( s ); 
+
+					// return the number of chars read from keyboard
+					return s.length( );
+					} catch ( IOException e ) {
+					System.out.println( e );
+					return ERROR;
+					}
+				case STDOUT:
+				case STDERR:
+					System.out.println( "threaOS: caused read errors" );
+					return ERROR;
 			}
-			// prepare a read buffer
-			StringBuffer buf = ( StringBuffer )args;
-
-			// append the keyboard intput to this read buffer
-			buf.append( s ); 
-
-			// return the number of chars read from keyboard
-			return s.length( );
-		    } catch ( IOException e ) {
-			System.out.println( e );
-			return ERROR;
-		    }
-		case STDOUT:
-		case STDERR:
-		    System.out.println( "threaOS: caused read errors" );
-		    return ERROR;
-		}
-		// return FileSystem.read( param, byte args[] );
+			if (param > 2 && scheduler != null) {
+				if ((myTcb = scheduler.getMyTcb()) != null) {
+					byte[] b = (byte[]) args;
+					FileTableEntry ent = myTcb.getFtEnt(param);
+					if (ent != null) return fs.read(ent, b);
+				}
+			}
 		return ERROR;
 	    case WRITE:
-		switch ( param ) {
-		case STDIN:
-		    System.out.println( "threaOS: cannot write to System.in" );
-		    return ERROR;
-		case STDOUT:
-		    System.out.print( (String)args );
-		    break;
-		case STDERR:
-		    System.err.print( (String)args );
-		    break;
-		}
-		return OK;
+			switch ( param ) {
+				case STDIN:
+					System.out.println( "threaOS: cannot write to System.in" );
+					return ERROR;
+				case STDOUT:
+					System.out.print( (String)args );
+					break;
+				case STDERR:
+					System.err.print( (String)args );
+					break;
+			}
+			if (param > 2 && scheduler != null) {
+				if ((myTcb = scheduler.getMyTcb()) != null) {
+					byte[] b = (byte[]) args;
+					FileTableEntry ent = myTcb.getFtEnt(param);
+					if (ent != null) return fs.write(ent, b);
+				}
+			}
+		return ERROR;
 	    case CREAD:   // to be implemented in assignment 4
 		return cache.read( param, ( byte[] )args ) ? OK : ERROR;
 	    case CWRITE:  // to be implemented in assignment 4
@@ -177,15 +199,25 @@ public class Kernel
 		cache.flush( );
 		return OK;
 	    case OPEN:    // to be implemented in project
-		return OK;
+			if ((myTcb = scheduler.getMyTcb()) != null) {
+				String[] s = (String[]) args;
+				FileTableEntry ent = fs.open(s[0], s[1]);
+				int fd = myTcb.getFd(ent);
+				return fd;
+			}
+			return ERROR;
 	    case CLOSE:   // to be implemented in project
-		return OK;
+			if ((myTcb = scheduler.getMyTcb()) != null) {
+				FileTableEntry ent = myTcb.returnFd(param);
+				return fs.close(ent);
+			}
+		return ERROR;
 	    case SIZE:    // to be implemented in project
 		return OK;
 	    case SEEK:    // to be implemented in project
 		return OK;
 	    case FORMAT:  // to be implemented in project
-		return OK;
+			return fs.format(param);
 	    case DELETE:  // to be implemented in project
 		return OK;
 	    }

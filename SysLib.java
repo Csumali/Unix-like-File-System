@@ -131,8 +131,23 @@ public class SysLib {
 				 Kernel.WRITE, fd, buffer);
     }
 
+    public static int close(int fd) {
+        return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
+				 Kernel.CLOSE, fd, null);
+    }
+
     public static int read(int fd, byte buffer[]) {
         return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
 				 Kernel.READ, fd, buffer);
+    }
+
+    public static int seek(int fd, int offset, int whence) {
+        return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
+				 Kernel.READ, fd, null);
+    }
+
+    public static int delete(String filename) {
+        return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
+				 Kernel.READ, 0, null);
     }
  }
