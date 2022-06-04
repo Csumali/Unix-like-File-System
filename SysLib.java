@@ -143,11 +143,16 @@ public class SysLib {
 
     public static int seek(int fd, int offset, int whence) {
         return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
-				 Kernel.READ, fd, null);
+				 Kernel.SEEK, fd, new int[] {offset, whence});
     }
 
     public static int delete(String filename) {
         return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
-				 Kernel.READ, 0, null);
+				 Kernel.DELETE, 0, filename);
+    }
+
+    public static int fsize(int fd) {
+        return Kernel.interrupt( Kernel.INTERRUPT_SOFTWARE,
+				 Kernel.SIZE, fd, null);
     }
  }

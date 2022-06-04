@@ -209,17 +209,25 @@ public class Kernel
 	    case CLOSE:   // to be implemented in project
 			if ((myTcb = scheduler.getMyTcb()) != null) {
 				FileTableEntry ent = myTcb.returnFd(param);
-				return fs.close(ent);
+				if (ent != null) return fs.close(ent);
 			}
 		return ERROR;
 	    case SIZE:    // to be implemented in project
-		return OK;
+			if ((myTcb = scheduler.getMyTcb()) != null) {
+				FileTableEntry ent = myTcb.getFtEnt(param);
+				if (ent != null) return fs.fsize(ent);
+			}
 	    case SEEK:    // to be implemented in project
-		return OK;
+			if ((myTcb = scheduler.getMyTcb()) != null) {
+				int[] i = (int[]) args;
+				FileTableEntry ent = myTcb.getFtEnt(param);
+				if (ent != null) return fs.seek(ent, i[0], i[1]);
+			}
+			return ERROR;
 	    case FORMAT:  // to be implemented in project
 			return fs.format(param);
 	    case DELETE:  // to be implemented in project
-		return OK;
+			return fs.delete((String)args);
 	    }
 	    return ERROR;
 	case INTERRUPT_DISK: // Disk interrupts

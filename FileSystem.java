@@ -83,7 +83,6 @@ public class FileSystem {
         int seekPtr = ftEnt.seekPtr;
         int bufferIndex = 0;
         if (ftEnt.mode.equals("a")) seekPtr = inode.length; // set pointer to end if mode is append
-
         // Deal with remainder if pointer does not start from 0
         if (seekPtr % Disk.blockSize != 0 && seekPtr < inode.directSize * Disk.blockSize) {
             int remainder = seekPtr % Disk.blockSize;
@@ -92,15 +91,16 @@ public class FileSystem {
                 short newBlock = (short)superBlock.getFreeBlock();
                 inode.direct[directIndex] = newBlock;
             }
-            byte[] remainderBuffer = new byte[remainder];
+            byte[] remainderBuffer = new byte[Disk.blockSize];
             SysLib.rawread(inode.direct[directIndex], remainderBuffer);
             byte[] writeBuffer = new byte[Disk.blockSize];
-            System.arraycopy(remainderBuffer, 0, writeBuffer, 0, remainderBuffer.length);
+            System.arraycopy(remainderBuffer, 0, writeBuffer, 0, remainder);
             
             if (buffer.length < (Disk.blockSize - remainder)) {
                 System.arraycopy(buffer, bufferIndex, writeBuffer, remainder, buffer.length);
                 SysLib.rawwrite(inode.direct[directIndex], writeBuffer);
                 ftEnt.seekPtr += buffer.length;
+                inode.length += buffer.length;
                 return buffer.length;
             }
             System.arraycopy(buffer, bufferIndex, writeBuffer, remainder, writeBuffer.length - remainderBuffer.length);
@@ -118,10 +118,14 @@ public class FileSystem {
 
             byte[] writeBuffer = new byte[Disk.blockSize];
             if (buffer.length - bufferIndex <= Disk.blockSize) {
+                byte[] leftover = new byte[Disk.blockSize];
+                SysLib.rawread(inode.direct[directIndex], leftover);
+                System.arraycopy(leftover, 0, writeBuffer, 0, leftover.length);
                 System.arraycopy(buffer, bufferIndex, writeBuffer, 0, buffer.length - bufferIndex);
                 SysLib.rawwrite(inode.direct[directIndex], writeBuffer);
                 seekPtr += buffer.length - bufferIndex;
                 ftEnt.seekPtr = seekPtr;
+                inode.length += buffer.length;
                 return buffer.length;
             }
             System.arraycopy(buffer, bufferIndex, writeBuffer, 0, writeBuffer.length);
@@ -134,46 +138,55 @@ public class FileSystem {
             short newBlock = (short)superBlock.getFreeBlock();
             inode.indirect = newBlock;
         }
+
         byte[] indirectBlock = new byte[Disk.blockSize];
         SysLib.rawread(inode.indirect, indirectBlock);
-        int offset = 0;
+        int offset = (seekPtr - inode.directSize * Disk.blockSize) / Disk.blockSize * 2;
         short blockId;
-
         // Deal with seek pointer if it is in the middle of a block
         if (seekPtr % Disk.blockSize != 0) {
             int remainder = seekPtr % Disk.blockSize;
-            byte[] remainderBuffer = new byte[remainder];
-            if (offset >= indirectBlock.length) {
+            byte[] remainderBuffer = new byte[Disk.blockSize];
+            if (SysLib.bytes2short(indirectBlock, offset) <= 0) {
                 short newBlock = (short)superBlock.getFreeBlock();
                 SysLib.short2bytes(newBlock, indirectBlock, offset);
+                SysLib.rawwrite(inode.indirect, indirectBlock);
             }
             blockId = SysLib.bytes2short(indirectBlock, offset);
             SysLib.rawread(blockId, remainderBuffer);
             byte[] writeBuffer = new byte[Disk.blockSize];
-            System.arraycopy(remainderBuffer, 0, writeBuffer, 0, remainderBuffer.length);
+            System.arraycopy(remainderBuffer, 0, writeBuffer, 0, remainder);
             
             if (buffer.length - bufferIndex < (Disk.blockSize - remainder)) {
                 System.arraycopy(buffer, bufferIndex, writeBuffer, remainder, buffer.length - bufferIndex);
                 SysLib.rawwrite(blockId, writeBuffer);
                 ftEnt.seekPtr += buffer.length - bufferIndex;
+                inode.length += buffer.length;
                 return buffer.length;
             }
-            System.arraycopy(buffer, bufferIndex, writeBuffer, remainder, writeBuffer.length - remainderBuffer.length);
-            seekPtr += writeBuffer.length - remainderBuffer.length;
-            bufferIndex += writeBuffer.length - remainderBuffer.length;
+            System.arraycopy(buffer, bufferIndex, writeBuffer, remainder, writeBuffer.length - remainder);
+            SysLib.rawwrite(blockId, writeBuffer);
+            seekPtr += writeBuffer.length - remainder;
+            bufferIndex += writeBuffer.length - remainder;
             offset += 2;
         }
-        while (bufferIndex < buffer.length && (blockId = SysLib.bytes2short(indirectBlock, offset)) > 0) {
-            if (offset >= indirectBlock.length) {
+        while (bufferIndex < buffer.length) {
+            if ((blockId = SysLib.bytes2short(indirectBlock, offset)) <= 0) {
                 short newBlock = (short)superBlock.getFreeBlock();
                 SysLib.short2bytes(newBlock, indirectBlock, offset);
+                blockId = newBlock;
+                SysLib.rawwrite(inode.indirect, indirectBlock);
             }
             byte[] writeBuffer = new byte[Disk.blockSize];
             if (buffer.length - bufferIndex <= Disk.blockSize) {
+                byte[] leftover = new byte[Disk.blockSize];
+                SysLib.rawread(blockId, leftover);
+                System.arraycopy(leftover, 0, writeBuffer, 0, leftover.length);
                 System.arraycopy(buffer, bufferIndex, writeBuffer, 0, buffer.length - bufferIndex);
                 SysLib.rawwrite(blockId, writeBuffer);
                 seekPtr += buffer.length - bufferIndex;
                 ftEnt.seekPtr = seekPtr;
+                inode.length += buffer.length;
                 return buffer.length;
             }
             System.arraycopy(buffer, bufferIndex, writeBuffer, 0, writeBuffer.length);
@@ -183,6 +196,7 @@ public class FileSystem {
             offset += 2;
         }
         ftEnt.seekPtr = seekPtr;
+        inode.length += bufferIndex;
         return bufferIndex;
         }
     }
@@ -207,7 +221,7 @@ public class FileSystem {
 
         synchronized(ftEnt) {
         // Deal with remainder if pointer does not start from 0
-        if (seekPtr % Disk.blockSize != 0) {
+        if (seekPtr % Disk.blockSize != 0 && seekPtr < inode.directSize * Disk.blockSize) {
             int remainder = seekPtr % Disk.blockSize;
             int directIndex = seekPtr / Disk.blockSize;
             if (inode.direct[directIndex] == -1) return 0;
@@ -245,7 +259,7 @@ public class FileSystem {
 
         byte[] indirectBlock = new byte[Disk.blockSize];
         SysLib.rawread(inode.indirect, indirectBlock);
-        int offset = 0;
+        int offset = (seekPtr - inode.directSize * Disk.blockSize) / Disk.blockSize * 2;
         short blockId;
 
         // Deal with seek pointer if it is in the middle of a block
@@ -270,6 +284,7 @@ public class FileSystem {
         while (bufferIndex < buffer.length && (blockId = SysLib.bytes2short(indirectBlock, offset)) > 0) {
             if (offset >= indirectBlock.length) return bufferIndex;
             byte[] readBuffer = new byte[Disk.blockSize];
+            SysLib.rawread(blockId, readBuffer);
             if (buffer.length - bufferIndex <= Disk.blockSize) {
                 System.arraycopy(readBuffer, 0, buffer, bufferIndex, buffer.length - bufferIndex);
                 seekPtr += buffer.length - bufferIndex;
@@ -290,5 +305,25 @@ public class FileSystem {
         synchronized (dirEnt) {
             return dirEnt.inode.length;
         }
+    }
+
+    int seek(FileTableEntry ftEnt, int offset, int whence) {
+        if (whence == 0) {
+            ftEnt.seekPtr = offset;
+        } else if (whence == 1) {
+            ftEnt.seekPtr += offset;
+        } else if (whence == 2) {
+            ftEnt.seekPtr = ftEnt.inode.length + offset;
+        } else return -1;
+        if (ftEnt.seekPtr < 0) ftEnt.seekPtr = 0;
+        else if (ftEnt.seekPtr > ftEnt.inode.length) ftEnt.seekPtr = ftEnt.inode.length;
+        return ftEnt.seekPtr;
+    }
+
+    int delete(String filename) {
+        short iNumber = directory.namei(filename);
+        if (iNumber == -1) return -1;
+        if (directory.ifree(iNumber)) return 0;
+        return -1; 
     }
 }
