@@ -22,16 +22,13 @@ public class FileTable {
     if (entryMode < 0) { // invalid mode
       return null;
     }
-    short iNumber;
-    Inode fileNode = null;
-    FileTableEntry fte = null;
+
+    short iNumber = -1;
+    Inode inode = null;
 
     while (true) {
-      if (filename.equals("/")) {
-        iNumber = 0;
-      } else {
-        iNumber = dir.namei(filename);
-      }
+      iNumber = (filename.equals("/") ? (short) 0 : dir.namei(filename));
+
       if (iNumber < 0) {
         if (entryMode == 0) {
           return null;
@@ -39,17 +36,18 @@ public class FileTable {
         if ((iNumber = dir.ialloc(filename)) < 0) {
           return null;
         }
-        fileNode = new Inode();
+        inode = new Inode();
         break;
       }
-      fileNode = new Inode(iNumber);
-      if (fileNode.flag == 4) {
+      // when iNumber >= 0
+      inode = new Inode(iNumber);
+      if (inode.flag == 4) {
         return null;
       }
-      if (fileNode.flag == 0 || fileNode.flag == 1) {
+      if (inode.flag == 0 || inode.flag == 1) {
         break;
       }
-      if (entryMode == 0 && fileNode.flag == 0) {
+      if (entryMode == 0 && inode.flag == 0) {
         break;
       }
       try {
@@ -57,11 +55,11 @@ public class FileTable {
       } catch (InterruptedException e) {
       }
     }
-    fileNode.count++;
-    fileNode.toDisk(iNumber);
-    fte = new FileTableEntry(fileNode, iNumber, mode);
-    table.add(fte);
-    return fte;
+    inode.count++;
+    inode.toDisk(iNumber);
+    FileTableEntry e = new FileTableEntry(inode, iNumber, mode);
+    table.addElement(e);
+    return e;
   }
 
   // receive a file table entry reference
@@ -77,20 +75,22 @@ public class FileTable {
       return false;
     }
 
-    Inode fileNode = e.inode;
+    Inode inode = e.inode;
     short iNumber = e.iNumber;
 
-    if (fileNode.count > 0) {
-      fileNode.count--;
+    if (inode.count > 0) {
+      // decrease the count of users of that file
+      inode.count--;
     }
 
-    if (fileNode.count == 0) {
-      fileNode.flag = 0;
+    if (inode.count == 0) {
+      inode.flag = 0;
     }
 
-    fileNode.toDisk(iNumber);
+    // save the corresponding inode to the disk
+    inode.toDisk(iNumber);
 
-    if (fileNode.flag == 0 || fileNode.flag == 1) {
+    if (inode.flag == 0 || inode.flag == 1) {
       notify();
     }
     e = null;
@@ -101,7 +101,7 @@ public class FileTable {
     return table.isEmpty(); // return if table is empty
   }                         // should be called before starting a format
 
-  // returns mode of FileTableEntry given its mode field
+  // returns a mode of FileTableEntry given its mode field
   public static short getEntryMode(String mode) {
     if (mode.equalsIgnoreCase("r")) { // read only
       return 0;
