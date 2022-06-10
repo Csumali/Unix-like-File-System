@@ -2,31 +2,31 @@ import java.util.Vector;
 import java.util.Vector;
 
 public class FileTable {
-  private Vector table;  // the actual entity of this file table
+  private Vector table; // the actual entity of this file table
   private Directory dir; // the root directory
 
-  public FileTable(Directory directory) { // constructor
+  // Constructor
+  public FileTable(Directory directory) {
     table = new Vector(); // instantiate a file (structure) table
-    dir = directory;      // receive a reference to the Director
-  }                       // from the file system
+    dir = directory; // receive a reference to the Director
+  } // from the file system
 
-  // major public methods
-
-  // allocate a new file (structure) table entry for this file name
-  // allocate/retrieve and register the corresponding inode using dir
-  // increment this inode's count
-  // immediately write back this inode to the disk
-  // return a reference to this file (structure) table entry
+  // Allocate a new file (structure) table entry for this file name
+  // Allocates/retrieves and register the corresponding inode using dir
+  // Increments this inode's count
+  // Immediately writes back this inode to the disk
+  // Returns a reference to this file (structure) table entry
   public synchronized FileTableEntry falloc(String filename, String mode) {
-    short entryMode = getEntryMode(mode);
+    short entryMode = getFileTableEntryMode(mode);
     if (entryMode < 0) { // invalid mode
       return null;
     }
 
-    short iNumber = -1;
-    Inode inode = null;
+    short iNumber = -1; // inode number
+    Inode inode = null; // hold inode
 
     while (true) {
+      // get the inumber from the inode for the corresponding file name
       iNumber = (filename.equals("/") ? (short) 0 : dir.namei(filename));
 
       if (iNumber < 0) {
@@ -55,17 +55,17 @@ public class FileTable {
       } catch (InterruptedException e) {
       }
     }
-    inode.count++;
+    inode.count++; // increase the number of users
     inode.toDisk(iNumber);
     FileTableEntry e = new FileTableEntry(inode, iNumber, mode);
     table.addElement(e);
     return e;
   }
 
-  // receive a file table entry reference
-  // save the corresponding inode to the disk
-  // free this file table entry.
-  // return true if this file table entry found in my table
+  // Receives a file table entry reference
+  // Saves the corresponding inode to the disk
+  // Frees this file table entry.
+  // Returns true if this file table entry found in my table
   public synchronized boolean ffree(FileTableEntry e) {
     if (e == null) {
       return true;
@@ -97,12 +97,14 @@ public class FileTable {
     return true;
   }
 
+  // Returns true/false on whether there is not any FileTableEntry cached inside
+  // FileTable
   public synchronized boolean fempty() {
     return table.isEmpty(); // return if table is empty
-  }                         // should be called before starting a format
+  } // should be called before starting a format
 
-  // returns a mode of FileTableEntry given its mode field
-  public static short getEntryMode(String mode) {
+  // Returns a mode of the table entry given its mode field
+  public static short getFileTableEntryMode(String mode) {
     if (mode.equalsIgnoreCase("r")) { // read only
       return 0;
     } else if (mode.equalsIgnoreCase("w")) { // write only
